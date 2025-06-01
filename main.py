@@ -17,7 +17,14 @@ async def root():
     return {"message": "TechDocs RAG API", "status": "active"}
 
 @app.get("/search")
-async def search_docs(q: str = Query(...)):
+async def search_docs(q: str = Query(default="", description="Search query")):
+    # Handle empty query
+    if not q or q.strip() == "":
+        return {
+            "answer": "Please provide a search query using the 'q' parameter",
+            "sources": "TypeScript Book - https://github.com/basarat/typescript-book"
+        }
+    
     query = q.lower()
     
     # Direct matching - covers all possible variations
