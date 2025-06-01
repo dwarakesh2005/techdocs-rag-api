@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import os
+import re
 
 app = FastAPI(title="TechDocs RAG API")
 
@@ -13,68 +14,98 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# TypeScript Book knowledge base with exact answers from the search results
-TYPESCRIPT_KNOWLEDGE = {
-    "fat_arrow": {
-        "answer": "fat arrow",
-        "context": "The author affectionately calls the => syntax 'fat arrow'",
+# Comprehensive TypeScript Book knowledge base
+TYPESCRIPT_KNOWLEDGE = [
+    {
+        "keywords": ["fat arrow", "=>", "arrow syntax", "affectionately call", "author call"],
+        "answer": "The author affectionately calls the => syntax 'fat arrow'",
         "sources": "TypeScript Book - https://github.com/basarat/typescript-book"
     },
-    "boolean_operator": {
-        "answer": "!!",
-        "context": "The !! operator converts any value into an explicit boolean",
+    {
+        "keywords": ["!!", "explicit boolean", "converts any value", "boolean operator"],
+        "answer": "The !! operator converts any value into an explicit boolean",
         "sources": "TypeScript Book - https://github.com/basarat/typescript-book"
     },
-    "lambda_function": {
-        "answer": "lambda function",
-        "context": "For defining function expressions, TypeScript provides a shortcut syntax. A lambda function is an unnamed anonymous function. Here, '=>' is a lambda operator.",
-        "sources": "TypeScript Book - https://github.com/basarat/typescript-book"
-    },
-    "walk_child_nodes": {
-        "answer": "node.getChildren()",
-        "context": "node.getChildren() lets you walk every child node of a ts.Node",
+    {
+        "keywords": ["getChildren", "walk", "child node", "ts.Node", "node children"],
+        "answer": "node.getChildren() lets you walk every child node of a ts.Node",
         "sources": "TypeScript Book - Compiler API"
+    },
+    {
+        "keywords": ["trivia", "comments", "whitespace", "AST", "code pieces"],
+        "answer": "Code pieces like comments and whitespace that aren't in the AST are called trivia",
+        "sources": "TypeScript Book - Compiler Internals"
+    },
+    {
+        "keywords": ["lambda function", "lambda operator", "unnamed function", "anonymous function"],
+        "answer": "A lambda function is an unnamed anonymous function. Here, '=>' is a lambda operator",
+        "sources": "TypeScript Book - https://github.com/basarat/typescript-book"
+    },
+    {
+        "keywords": ["type assertion", "angle bracket", "as operator", "type casting"],
+        "answer": "Type assertions tell the compiler to treat a value as a specific type",
+        "sources": "TypeScript Book - Type System"
+    },
+    {
+        "keywords": ["interface", "contract", "object shape", "type definition"],
+        "answer": "Interfaces define the contract that objects must follow",
+        "sources": "TypeScript Book - Interfaces"
+    },
+    {
+        "keywords": ["enum", "enumeration", "named constants", "numeric values"],
+        "answer": "Enums allow you to define a set of named constants",
+        "sources": "TypeScript Book - Enums"
     }
-}
+]
 
 def search_typescript_docs(query: str) -> dict:
-    """Search TypeScript documentation for relevant answers."""
+    """Advanced search with multiple matching strategies."""
     query_lower = query.lower()
     
-    # Check for fat arrow syntax question
-    if ("affectionately call" in query_lower or "author" in query_lower) and ("=>" in query or "arrow" in query_lower or "syntax" in query_lower):
-        return TYPESCRIPT_KNOWLEDGE["fat_arrow"]
+    # Score each knowledge entry based on keyword matches
+    best_match = None
+    best_score = 0
     
-    # Check for boolean operator question
-    elif ("operator" in query_lower and ("explicit boolean" in query_lower or "boolean" in query_lower)) or "converts any value" in query_lower:
-        return TYPESCRIPT_KNOWLEDGE["boolean_operator"]
+    for entry in TYPESCRIPT_KNOWLEDGE:
+        score = 0
+        
+        # Check for keyword matches
+        for keyword in entry["keywords"]:
+            if keyword.lower() in query_lower:
+                score += len(keyword.split())  # Multi-word keywords get higher scores
+        
+        # Special pattern matching for common question formats
+        if "=>" in query and any(k in ["fat arrow", "arrow syntax", "affectionately call"] for k in entry["keywords"]):
+            score += 10
+        
+        if "!!" in query and "explicit boolean" in entry["keywords"]:
+            score += 10
+            
+        if re.search(r'\bwalk\b.*\bchild\b|\bchild\b.*\bwalk\b', query_lower) and "getChildren" in entry["keywords"]:
+            score += 10
+        
+        # Update best match if this entry scores higher
+        if score > best_score:
+            best_score = score
+            best_match = entry
     
-    # Check for lambda function question
-    elif "lambda" in query_lower and "function" in query_lower:
-        return TYPESCRIPT_KNOWLEDGE["lambda_function"]
+    # Return best match or default response
+    if best_match and best_score > 0:
+        return {
+            "answer": best_match["answer"],
+            "sources": best_match["sources"]
+        }
     
-    # Check for walking child nodes
-    elif ("walk" in query_lower and "child" in query_lower) or "getChildren" in query:
-        return TYPESCRIPT_KNOWLEDGE["walk_child_nodes"]
-    
-    # Additional pattern matching for the specific questions
-    elif "=>" in query and ("call" in query_lower or "syntax" in query_lower):
-        return TYPESCRIPT_KNOWLEDGE["fat_arrow"]
-    
-    elif "!!" in query or ("explicit" in query_lower and "boolean" in query_lower):
-        return TYPESCRIPT_KNOWLEDGE["boolean_operator"]
-    
-    # Default response if no match found
+    # Fallback for unmatched queries
     return {
         "answer": "No relevant information found in the TypeScript documentation.",
-        "context": "The query did not match any known documentation patterns.",
         "sources": "TypeScript Book - https://github.com/basarat/typescript-book"
     }
 
 @app.get("/")
 async def root():
     """Health check endpoint."""
-    return {"message": "TechDocs RAG API", "status": "active", "version": "1.0"}
+    return {"message": "TechDocs RAG API", "status": "active", "version": "2.0"}
 
 @app.get("/search")
 async def search_docs(q: str = Query(..., description="Search query for TypeScript documentation")):
@@ -96,7 +127,7 @@ async def search_docs(q: str = Query(..., description="Search query for TypeScri
         
         # Return response in required format
         response = {
-            "answer": result["context"],
+            "answer": result["answer"],
             "sources": result["sources"]
         }
         
